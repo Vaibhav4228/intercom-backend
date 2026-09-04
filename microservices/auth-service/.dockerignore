@@ -1,0 +1,8 @@
+# --- Version Control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Dependency Folders ---
+node_modules/
+

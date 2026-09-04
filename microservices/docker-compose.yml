@@ -1,0 +1,148 @@
+version: "3.9"
+
+services:
+
+  gateway:
+    build: ./gateway
+    container_name: gateway
+    env_file:
+      - ./gateway/.env
+    ports:
+      - "3000:3000" # Express
+      - "3001:3001" # websocket
+    volumes:
+      - ./gateway:/app
+      - ./proto:/app/proto
+    depends_on:
+      - auth-service
+    networks:
+      - microservices-net 
+  
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    env_file:
+      - ./auth-service/.env
+    # ports:
+    #   - "50053:50053"
+    volumes:
+      - ./auth-service:/app
+      - ./proto:/app/proto
+    networks:
+      - microservices-net 
+    depends_on:
+      - mongo
+      - rabbitmq
+
+
+  task-service:
+    build: ./task-service
+    container_name: task-service
+    env_file:
+      - ./task-service/.env
+    volumes:
+      - ./task-service:/app
+      - ./proto:/app/proto
+    networks:
+      - microservices-net 
+    depends_on:
+      - gateway
+      - notification-service
+      - mongo
+      - rabbitmq
+
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    env_file:
+      - ./notification-service/.env
+    # ports:
+    #   - "50052:50052"
+    volumes:
+      - ./notification-service:/app
+      - ./proto:/app/proto
+    networks:
+      - microservices-net
+    depends_on:
+      - auth-service
+
+ 
+  mongo:
+    image: mongo:7
+    # ports:
+    #   - "27017:27017" 
+    container_name: mongo
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+      - MONGO_INITDB_DATABASE=sales_agent_db
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - microservices-net
+    restart: always  
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5   
+
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    # ports:
+      # - "5672:5672"
+      # - "15672:15672"
+       #communicate with RabbitMQ.
+        # RabbitMQ Management UI : This is the web dashboard.
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=password123
+    networks:
+      - microservices-net
+    restart: always
+
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    # ports:
+    #   - "6379:6379"
+    environment:
+      # Changed maxmemory-policy to allkeys-lru for smart cache eviction
+      - REDIS_ARGS=--appendonly yes --save 60 1 --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_cache_data:/data
+    networks:
+      - microservices-net
+    restart: unless-stopped
+
+  
+  pg-vector-db:
+    image: pgvector/pgvector:pg16
+    container_name: pg-vector-db
+    # ports:
+    #   - 5432:5432
+    restart: always
+    environment:
+      - POSTGRES_DB=api
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=ChangeMe
+    networks:
+      - microservices-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  mongo-data:
+    driver: local
+  redis_cache_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  microservices-net:
+    driver: bridge
